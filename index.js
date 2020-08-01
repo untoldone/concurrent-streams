@@ -7,7 +7,7 @@ var modulePath = path.resolve('./first.js');
 var i = 0;
 var r = new Readable({
   read() {
-    if(i <= 25) {
+    if(i <= 100) {
       this.push(i);
       i++;
     } else {

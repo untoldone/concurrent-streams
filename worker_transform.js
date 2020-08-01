@@ -1,5 +1,5 @@
-const { Readable, Writable, Transform } = require('stream');
-const { Worker, isMainThread, parentPort, workerData, threadId } = require('worker_threads');
+const { Transform } = require('stream');
+const { fork } = require('child_process');
 
 class StreamWorkerPool {
   constructor(concurency, modulePath, notifyCb) {
@@ -10,12 +10,7 @@ class StreamWorkerPool {
     this.emptyQueueCb = null;
 
     for(var i = 0; i < concurency; i++) {
-      var worker = new Worker(__filename, { workerData: modulePath });
-
-      worker.on('error', function (err) {
-        console.error(err);
-      })
-
+      var worker = fork('./worker.js', [modulePath]);
       this.idleWorkers.push(worker);
       this.allWorkers.push(worker);
     }
@@ -29,7 +24,7 @@ class StreamWorkerPool {
   shutdown(completed) {
     this.emptyQueueCb = () => {
       this.allWorkers.forEach(function(worker) {
-        worker.postMessage(null);
+        worker.send(null);
       });
       completed();
     }
@@ -47,7 +42,7 @@ class StreamWorkerPool {
         this._processOutstandingItems();
       });
 
-      worker.postMessage(item);
+      worker.send(item);
       cb();
     }
 
@@ -57,53 +52,6 @@ class StreamWorkerPool {
       this.emptyQueueCb();
     }
   }
-}
-
-if (!isMainThread) {
-  const streamFactory = require(workerData);
-
-  var pendingRead = false,
-      pendingInput = null,
-      workerInputStream,
-      workerOutputStream;
-
-
-  var hander = (message) => {
-    if(pendingRead) {
-      workerInputStream.push(message);
-      pendingRead = false;
-    } else {
-      pendingInput = message;
-    }
-  }
-  parentPort.on('message', hander);
-
-  workerInputStream = new Readable({
-    read(size) {
-      if(pendingInput !== null) {
-        this.push(pendingInput);
-        pendingInput = null;
-      } else {
-        pendingRead = true;
-      }
-    },
-    objectMode: true
-  });
-
-  workerOutputStream = new Writable({
-    write(chunk, _, cb) {
-      parentPort.postMessage(chunk);
-      cb();
-    },
-    destroy() {
-      parentPort.off('message', hander);
-    },
-    objectMode: true,
-    autoDestroy: true
-  })
-
-
-  streamFactory(workerInputStream).pipe(workerOutputStream);
 }
 
 /**
